@@ -1,19 +1,113 @@
 # end _to_end_LLM_bot_LLAmA3.1
  
-This project involves developing an advanced end-to-end chatbot using the LLaMA 3.1 language model, designed to deliver human-like conversational experiences. The chatbot will utilizet NLP techniques, integrate with various platforms, and be deployed using Gradio for an interactive web interface.
-
-Develop a Sophisticated Conversational AI: Create an intelligent chatbot leveraging the LLaMA 3.1 model, capable of understanding diverse queries, maintaining context, and generating accurate responses.
-Interactive Deployment: Use Gradio to deploy the chatbot, offering an intuitive and interactive interface for users.
-Advanced NLP Techniques: Implement transformers, pipelines, and prompt templates to enhance the chatbot's capabilities and performance.
-Utilize LLM Knowledge: Apply extensive knowledge of large language models (LLMs) to fine-tune and optimize the chatbot's performance.
-Platform Integration: Ensure the chatbot can be integrated with popular messaging platforms and web applications.
+#
+## NEW NEW NEW NEW
 
 
-TECHNICAL STACK::
-Backend: Python
-LLM Model: LLaMA 3.1 8b
-NLP Libraries: Transformers, Pipeline
-Prompt Engineering: Custom prompt templates for varied conversational contexts
-Database: PostgreSQL for storing user interactions and context data
-Deployment: Gradio for web-based deployment
-Integration: APIs for connecting with external platforms and services
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Commented out IPython magic to ensure Python compatibility.
+# %cd '/content/drive/My Drive/LLM_Project'
+
+!pip3 install -U "transformers==4.40.0" --upgrade
+!pip3 install accelerate bitsandbytes
+
+import transformers
+import torch
+
+model_id = "unsloth/llama-3-8b-Instruct-bnb-4bit"
+
+
+## this pipeline snippet for model deployment is given with met'model description
+pipeline = transformers.pipeline(
+    "text-generation",
+    model=model_id,
+    model_kwargs={
+        "torch_dtype": torch.float16,
+        "quantization_config": {"load_in_4bit": True},
+        "low_cpu_mem_usage": True,
+    },
+)
+
+messages = [
+    {"role": "system", "content": "You are a helpful assistant!"},
+    {"role": "user", "content": """Hey how are you doing today?"""},
+]
+
+prompt = pipeline.tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+)
+
+terminators = [
+    pipeline.tokenizer.eos_token_id,
+    pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+]
+
+outputs = pipeline(
+    prompt,
+    max_new_tokens=256,
+    eos_token_id=terminators,
+    do_sample=True,
+    temperature=0.6,
+    top_p=0.9,
+)
+
+print(outputs[0]["generated_text"][len(prompt):])
+
+!pip3 install gradio
+
+import gradio as gr
+
+messages = []
+
+def add_text(history, text):
+    global messages
+    history = history + [(text,'')]
+    messages = messages + [{"role":'user', 'content': text}]
+    return history, text
+
+def generate(history):
+  global messages
+  prompt = pipeline.tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+)
+
+  terminators = [
+    pipeline.tokenizer.eos_token_id,
+    pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+]
+
+  outputs = pipeline(
+    prompt,
+    max_new_tokens=256,
+    eos_token_id=terminators,
+    do_sample=True,
+    temperature=0.6,
+    top_p=0.9,
+)
+  response_msg = outputs[0]["generated_text"][len(prompt):]
+  for char in response_msg:
+      history[-1][1] += char
+      yield history
+  pass
+
+with gr.Blocks() as demo:
+
+    chatbot = gr.Chatbot(value=[], elem_id="chatbot")
+    with gr.Row():
+            txt = gr.Textbox(
+                show_label=False,
+                placeholder="Enter text and press enter",
+            )
+
+    txt.submit(add_text, [chatbot, txt], [chatbot, txt], queue=False).then(
+            generate, inputs =[chatbot,],outputs = chatbot,)
+
+demo.queue()
+demo.launch(debug=True)
+
